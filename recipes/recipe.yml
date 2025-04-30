@@ -6,23 +6,13 @@ name: os
 description: This is my personal OS image.
 
 base-image: ghcr.io/ublue-os/silverblue-main
-image-version: latest 
+image-version: latest
 
 modules:
   - type: rpm-ostree
     repos:
       - https://copr.fedorainfracloud.org/coprs/atim/starship/repo/fedora-%OS_VERSION%/atim-starship-fedora-%OS_VERSION%.repo
     install:
-      - micro
-      - starship
-      - vim-enhanced
-      - vim-powerline
-      - sshuttle 
-      - tmux
-      - tmux-powerline
-      - tuned
-      - tuned-switcher
-      - zsh
       - NetworkManager-l2tp-gnome
       - NetworkManager-libreswan-gnome
       - NetworkManager-openconnect-gnome
@@ -33,6 +23,13 @@ modules:
       - Thunar
       - blueman
       - bolt
+      - cockpit-machines
+      - cockpit-networkmanager
+      - cockpit-ostree
+      - cockpit-podman
+      - cockpit-storaged
+      - cockpit-system
+      - cockpit-ws
       - dunst
       - foot
       - fprintd-pam
@@ -44,8 +41,10 @@ modules:
       - lxqt-policykit
       - mesa-dri-drivers
       - mesa-vulkan-drivers
+      - micro
       - network-manager-applet
       - pavucontrol
+      - perl
       - pinentry-gnome3
       - playerctl
       - plymouth-system-theme
@@ -54,6 +53,8 @@ modules:
       - sddm
       - sddm-wayland-sway
       - slurp
+      - sshuttle
+      - starship
       - sway
       - sway-config-fedora
       - swaybg
@@ -61,6 +62,12 @@ modules:
       - swaylock
       - system-config-printer
       - thunar-archive-plugin
+      - tmux
+      - tmux-powerline
+      - tuned
+      - tuned-switcher
+      - vim-enhanced
+      - vim-powerline
       - waybar
       - wev
       - wl-clipboard
@@ -69,13 +76,8 @@ modules:
       - xdg-desktop-portal-gtk
       - xdg-desktop-portal-wlr
       - xorg-x11-server-Xwayland
-      - cockpit-machines
-      - cockpit-networkmanager
-      - cockpit-ostree
-      - cockpit-podman
-      - cockpit-storaged
-      - cockpit-system
-      - cockpit-ws
+      - zsh
+      - qutebrowser
 
 
   - type: default-flatpaks
