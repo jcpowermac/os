@@ -6,7 +6,7 @@ name: os
 description: This is my personal OS image.
 
 base-image: ghcr.io/ublue-os/silverblue-main
-image-version: latest
+image-version: 42
 
 modules:
   - type: rpm-ostree
