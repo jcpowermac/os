@@ -79,6 +79,7 @@ modules:
       - zsh
       - qutebrowser
       - btop
+      - golang
 
 
   - type: default-flatpaks
