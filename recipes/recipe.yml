@@ -80,13 +80,11 @@ modules:
       - qutebrowser
       - btop
       - golang
-      - tailscale
-      - twingate
 
-  - type: files
-    files:
-      - source: system
-        destination: /
+#  - type: files
+#    files:
+#      - source: system
+#        destination: /
 
   - type: default-flatpaks
     notify: true # Send notification after install/uninstall is finished (true/false)
