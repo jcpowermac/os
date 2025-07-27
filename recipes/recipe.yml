@@ -81,6 +81,7 @@ modules:
       - btop
       - golang
       - piper
+      - logiops
 
 #  - type: files
 #    files:
