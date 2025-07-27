@@ -80,6 +80,7 @@ modules:
       - qutebrowser
       - btop
       - golang
+      - piper
 
 #  - type: files
 #    files:
