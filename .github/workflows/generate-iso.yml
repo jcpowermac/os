@@ -33,7 +33,7 @@ jobs:
           enable_flatpak_dependencies: "false"
 
       - name: Split ISO (GitHub artifact limit is 2GB)
-        run: split -b 1.5G build/os.iso build/os.iso.part
+        run: split -b 1500000000 build/os.iso build/os.iso.part # 1.5GB; keep each part under the 2GB artifact limit
 
       - uses: actions/upload-artifact@v4
         with:
