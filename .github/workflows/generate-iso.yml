@@ -1,0 +1,42 @@
+# Generates an install ISO from the published image on a GitHub runner.
+# Trigger: Actions tab -> "generate-iso" -> Run workflow
+# The F45 ISO is ~3.2GB, over GitHub's 2GB artifact limit, so it is split.
+# Reassemble locally:
+#   cat os.iso.part* > os.iso
+name: generate-iso
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag of ghcr.io/jcpowermac/os to build the ISO from
+        required: true
+        default: latest
+        type: string
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: JasonN3/build-container-installer@main
+        with:
+          arch: x86_64
+          image_name: os
+          image_repo: ghcr.io/jcpowermac
+          image_tag: ${{ inputs.image_tag }}
+          version: "45"
+          variant: silverblue # matches fedora-release-silverblue in the image
+          # our image is cosigned by CI, but the signing policy is not
+          # configured inside this action's container, so skip verification
+          image_signed: "false"
+          iso_name: build/os.iso
+          enable_flatpak_dependencies: "false"
+
+      - name: Split ISO (GitHub artifact limit is 2GB)
+        run: split -b 1.5G build/os.iso build/os.iso.part
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: os.iso
+          path: build/os.iso.part*
+          retention-days: 90
