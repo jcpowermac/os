@@ -75,6 +75,9 @@ modules:
       - wlsunset
       - xdg-desktop-portal-gtk
       - xdg-desktop-portal-wlr
+      - xen
+      - xen-libs
+      - xen-runtime
       - xorg-x11-server-Xwayland
       - zsh
       - qutebrowser
@@ -83,6 +86,13 @@ modules:
       - piper
       - logiops
       - wf-recorder
+    remove: # strip the GNOME base layer (image is Sway via sddm) — gnome-session-wayland merged into gnome-session in F45
+      - gdm
+      - gnome-boxes
+      - gnome-initial-setup
+      - gnome-remote-desktop
+      - gnome-session
+      - gnome-shell
   - type: default-flatpaks@v1
     notify: true # Send notification after install/uninstall is finished (true/false)
     system:
