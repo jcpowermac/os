@@ -86,21 +86,33 @@ modules:
       - piper
       - logiops
       - wf-recorder
-    # strip the GNOME base layer (image is Sway via sddm); list = actually-installed-in-base, verified against silverblue:45
+    # strip the GNOME base layer (image is Sway via sddm)
+    # full reverse-dependency closure, verified with `rpm-ostree override remove` on silverblue:45
     remove:
       - gdm
       - gnome-backgrounds
       - gnome-bluetooth
+      - gnome-browser-connector
+      - gnome-classic-session
       - gnome-control-center
       - gnome-disk-utility
       - gnome-initial-setup
       - gnome-online-accounts
       - gnome-remote-desktop
       - gnome-session
+      - gnome-session-wayland-session
       - gnome-shell
+      - gnome-shell-extension-apps-menu
+      - gnome-shell-extension-background-logo
+      - gnome-shell-extension-common
+      - gnome-shell-extension-launch-new-instance
+      - gnome-shell-extension-places-menu
+      - gnome-shell-extension-window-list
       - gnome-software
+      - gnome-software-rpm-ostree
       - gnome-user-docs
       - nautilus
+      - papers-nautilus
   - type: default-flatpaks@v1
     notify: true # Send notification after install/uninstall is finished (true/false)
     system:
