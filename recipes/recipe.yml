@@ -86,13 +86,21 @@ modules:
       - piper
       - logiops
       - wf-recorder
-    remove: # strip the GNOME base layer (image is Sway via sddm) — gnome-session-wayland merged into gnome-session in F45
+    # strip the GNOME base layer (image is Sway via sddm); list = actually-installed-in-base, verified against silverblue:45
+    remove:
       - gdm
-      - gnome-boxes
+      - gnome-backgrounds
+      - gnome-bluetooth
+      - gnome-control-center
+      - gnome-disk-utility
       - gnome-initial-setup
+      - gnome-online-accounts
       - gnome-remote-desktop
       - gnome-session
       - gnome-shell
+      - gnome-software
+      - gnome-user-docs
+      - nautilus
   - type: default-flatpaks@v1
     notify: true # Send notification after install/uninstall is finished (true/false)
     system:
