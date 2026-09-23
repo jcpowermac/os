@@ -4,6 +4,22 @@ See the [BlueBuild docs](https://blue-build.org/how-to/setup/) for quick setup i
 
 After setup, it is recommended you update this README to describe your custom image.
 
+## Build prerequisites
+
+Building a new image of this repository requires:
+
+- [BlueBuild CLI](https://github.com/blue-build/cli?tab=readme-ov-file#installation), installed via cargo, the installer container, the install script, distrobox, or nix.
+- A container builder: `podman` (≥ v4), `docker` (≥ v23), or `buildah` (≥ v1.29).
+- `git` and, for signing, [`cosign`](https://github.com/sigstore/cosign) or `skopeo`.
+
+GitHub builds (`.github/workflows/build.yml`) need nothing extra — the [blue-build/github-action](https://blue-build.org/reference/github-action/) provides the toolchain; the only requirement is the `SIGNING_SECRET` repository secret.
+
+To build locally:
+
+```bash
+bluebuild build ./recipes/recipe.yml
+```
+
 ## Installation
 
 > [!WARNING]  
@@ -32,7 +48,7 @@ The `latest` tag will automatically point to the latest build. That build will s
 
 ## ISO
 
-If build on Fedora Atomic, you can generate an offline ISO with the instructions available [here](https://blue-build.org/learn/universal-blue/#fresh-install-from-an-iso). These ISOs cannot unfortunately be distributed on GitHub for free due to large sizes, so for public projects something else has to be used for hosting.
+If build on Fedora Atomic, you can generate an offline ISO with the instructions available [here](https://blue-build.org/how-to/generate-iso/). These ISOs cannot unfortunately be distributed on GitHub for free due to large sizes, so for public projects something else has to be used for hosting.
 
 ## Verification
 
