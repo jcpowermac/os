@@ -5,9 +5,9 @@ name: os
 # description will be included in the image's metadata
 description: This is my personal OS image.
 
-# upstream Fedora 45 beta; switch back to ghcr.io/ublue-os/silverblue-main once it ships a 45 tag
-base-image: quay.io/fedora-ostree-desktops/silverblue
-image-version: 45
+# base: Fedora Sway Atomic 44 (official Fedora atomic desktop image)
+base-image: quay.io/fedora-ostree-desktops/sway-atomic
+image-version: 44
 
 modules:
   - type: rpm-ostree
