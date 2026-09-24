@@ -12,6 +12,8 @@ image-version: 45
 modules:
   - type: rpm-ostree
     install:
+      - NetworkManager-openconnect-gnome
+      - NetworkManager-openvpn-gnome
       - Thunar
       - blueman
       - bolt
@@ -19,6 +21,8 @@ modules:
       - foot
       - fprintd-pam
       - gnome-keyring-pam
+      - gvfs
+      - gvfs-smb
       - grim
       - imv
       - kanshi
@@ -27,6 +31,7 @@ modules:
       - mesa-vulkan-drivers
       - micro
       - network-manager-applet
+      - pam_oo7
       - pavucontrol
       - perl
       - pinentry-gnome3
@@ -38,7 +43,6 @@ modules:
       - sddm-wayland-sway
       - slurp
       - sshuttle
-      - starship
       - sway
       - sway-config-fedora
       - swaybg
@@ -49,6 +53,7 @@ modules:
       - tmux
       - tmux-powerline
       - tuned
+      - tuned-ppd
       - tuned-switcher
       - vim-enhanced
       - vim-powerline
@@ -57,6 +62,7 @@ modules:
       - wl-clipboard
       - wlr-randr
       - wlsunset
+      - xarchiver
       - xdg-desktop-portal-gtk
       - xdg-desktop-portal-wlr
       - xen
