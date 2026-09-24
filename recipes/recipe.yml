@@ -31,7 +31,6 @@ modules:
       - mesa-vulkan-drivers
       - micro
       - network-manager-applet
-      - pam_oo7
       - pavucontrol
       - perl
       - pinentry-gnome3

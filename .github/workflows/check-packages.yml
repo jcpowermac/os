@@ -1,0 +1,20 @@
+name: check-packages
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -u
+          missing=0
+          pkgs=$(awk '/install:/{f=1;next} f&&/^- /{print $2} f&&!/^- /{f=0}' recipes/recipe.yml)
+          for p in $pkgs; do
+            if ! dnf -q list --available "$p" 2>/dev/null | grep -q "^$p[.[:space:]]"; then
+              echo "not in Fedora 44 repos: $p"
+              missing=1
+            fi
+          done
+          exit $missing
