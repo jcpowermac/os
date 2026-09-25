@@ -31,6 +31,9 @@ modules:
       - mesa-vulkan-drivers
       - micro
       - network-manager-applet
+      - openvswitch
+      - openvswitch-ovn-central
+      - openvswitch-ovn-host
       - pavucontrol
       - perl
       - pinentry-gnome3
@@ -57,6 +60,7 @@ modules:
       - vim-enhanced
       - vim-powerline
       - waybar
+      - waypipe
       - wev
       - wl-clipboard
       - wlr-randr
