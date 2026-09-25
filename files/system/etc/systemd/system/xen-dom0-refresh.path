@@ -2,9 +2,11 @@
 Description=Trigger Xen dom0 refresh when ostree deployments change
 
 [Path]
-# New/changed deployment = dir entries added under /ostree/deploy/fedora/
-# (no PathModifiedGlob in systemd; watching the dir fires on entry changes)
-PathModified=/ostree/deploy/fedora
+# New/changed deployment = deploy dirs added under /ostree/deploy/fedora/deploy/
+# and boot.N symlinks re-pointed under /ostree/ (ostree re-labels them).
+# PathModified fires on direct entry changes only, so watch both real levels.
+PathModified=/ostree
+PathModified=/ostree/deploy/fedora/deploy
 Unit=xen-dom0-refresh.service
 
 [Install]
