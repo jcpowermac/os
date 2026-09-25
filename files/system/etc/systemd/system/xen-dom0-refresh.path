@@ -1,0 +1,11 @@
+[Unit]
+Description=Trigger Xen dom0 refresh when ostree deployments change
+
+[Path]
+# New/changed deployment = dir entries added under /ostree/deploy/fedora/
+# (no PathModifiedGlob in systemd; watching the dir fires on entry changes)
+PathModified=/ostree/deploy/fedora
+Unit=xen-dom0-refresh.service
+
+[Install]
+WantedBy=multi-user.target

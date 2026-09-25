@@ -1,0 +1,10 @@
+[Unit]
+Description=Xen dom0 boot config (user.cfg, kernel hardlinks, /boot payload)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/xen-dom0-refresh
+
+[Install]
+WantedBy=multi-user.target
