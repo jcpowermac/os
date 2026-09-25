@@ -37,12 +37,15 @@ modules:
       - mesa-dri-drivers
       - mesa-vulkan-drivers
       - micro
+      - genisoimage
       - network-manager-applet
+      - networkmanager-ovs
       - openvswitch
       - openvswitch-ovn-central
       - openvswitch-ovn-host
       - pavucontrol
       - perl
+      - qemu-img
       - pinentry-gnome3
       - playerctl
       - plymouth-system-theme
