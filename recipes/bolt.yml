@@ -1,0 +1,16 @@
+---
+# name determines the ghcr package: ghcr.io/jcpowermac/os-bolt
+# Headless bolt VM image: per-app waypipe projection, no greeter, no signing
+# (bootc-image-builder consumes it unsigned — it never ostree-verifies).
+# Base: official minimal bootc image — kernel + openssh-server + ostree already in.
+# waypipe 0.11's `server` mode is itself a fake Wayland compositor, so no sway
+# or other desktop compositor is needed in the guest (Ruling B0-1).
+name: os-bolt
+description: Headless minimal variant for disposable waypipe-projected UI VMs.
+base-image: quay.io/fedora/fedora-bootc
+image-version: 44
+modules:
+  - type: rpm-ostree
+    install:
+      - waypipe   # `waypipe server` = per-app fake Wayland compositor (guest side)
+      - firefox   # first projected app; add more here as needed
