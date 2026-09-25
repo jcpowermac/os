@@ -39,7 +39,7 @@ modules:
       - micro
       - genisoimage
       - network-manager-applet
-      - networkmanager-ovs
+      - NetworkManager-ovs
       - openvswitch
       - openvswitch-ovn-central
       - openvswitch-ovn-host
