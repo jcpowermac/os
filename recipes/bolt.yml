@@ -14,3 +14,4 @@ modules:
     install:
       - waypipe   # `waypipe server` = per-app fake Wayland compositor (guest side)
       - firefox   # first projected app; add more here as needed
+      - systemd-networkd  # declarative link config (baked .network file); NM masked in the guest — the runtime ip-script + NM left DNS to systemd-resolved's stub with no upstream
