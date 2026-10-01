@@ -16,3 +16,4 @@ modules:
       - firefox   # first projected app; add more here as needed
       - systemd-networkd  # declarative link config (baked .network file); NM masked in the guest — the runtime ip-script + NM left DNS to systemd-resolved's stub with no upstream
       - nmap-ncat         # qvm-ctl relay bridges the guest waypipe unix socket to the dom0 TCP data port (no SSH in the projection path)
+      - xwayland-satellite # firefox is an X client: waypipe --xwls needs this in PATH to bind an X display socket
