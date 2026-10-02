@@ -11,9 +11,13 @@ base-image: quay.io/fedora/fedora-bootc
 image-version: 44
 modules:
   - type: rpm-ostree
+    repositories:
+      - name: kernel-vanilla-fedora
+        url: https://download.copr.fedorainfracloud.org/results/@kernel-vanilla/fedora/fedora-$releasever-$basearch/
     install:
       - waypipe   # `waypipe server` = per-app fake Wayland compositor (guest side)
       - firefox   # first projected app; add more here as needed
       - systemd-networkd  # declarative link config (baked .network file); NM masked in the guest — the runtime ip-script + NM left DNS to systemd-resolved's stub with no upstream
       - nmap-ncat         # qvm-ctl relay bridges the guest waypipe unix socket to the dom0 TCP data port (no SSH in the projection path)
       - xwayland-satellite # firefox is an X client: waypipe --xwls needs this in PATH to bind an X display socket
+      - kernel-core
