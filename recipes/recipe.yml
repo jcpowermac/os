@@ -18,9 +18,6 @@ modules:
     snippets:
       - "mkdir -p /var/lib/rpm-state"
   - type: rpm-ostree
-    repositories:
-      - name: kernel-vanilla-fedora
-        url: https://download.copr.fedorainfracloud.org/results/@kernel-vanilla/fedora/fedora-$releasever-$basearch/
     install:
       - NetworkManager-openconnect-gnome
       - NetworkManager-openvpn-gnome
@@ -91,6 +88,5 @@ modules:
       - piper
       - logiops
       - wf-recorder
-      - kernel-core
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
