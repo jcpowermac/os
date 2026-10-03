@@ -88,5 +88,23 @@ modules:
       - piper
       - logiops
       - wf-recorder
+      - dkms
+      - kernel-devel
+      - gcc
+      - git
+  # i915-sriov: SR-IOV-patched i915 (+xe) kernel modules (strongtz/i915-sriov-dkms,
+  # release 2026.09.16, BUILD_EXCLUSIVE_KERNEL 6.17-7.2). Baked at image build:
+  # cloned + dkms-built against the image's kernel-devel, installed to
+  # /lib/modules/<kver>/updates (depmod'd). Re-baked on every image rebuild,
+  # which is how this dom0 gets kernel updates. Needs the dom0 booted with
+  # intel_iommu=on iommu=pt (xen-dom0-refresh) and BIOS VT-d on; the VF module
+  # params (i915.max_vfs=7, ...) go in the cmdline at VF bring-up.
+  # https://github.com/strongtz/i915-sriov-dkms — handoff-2026-10-03.md thread 2.
+  # kernel-devel (which pulls kernel-core of the same version) pins the image to
+  # one kernel, so the built modules always match the booted kernel.
+  - type: script
+    snippets:
+      - 'set -e; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
+      - 'set -e; kver=$(ls /usr/src/kernels/); echo "building i915-sriov-dkms against ${kver}"; cd /src/i915-sriov-dkms && dkms add . && dkms build i915-sriov-dkms/2026.09.16 -k "${kver}" && dkms install i915-sriov-dkms/2026.09.16 -k "${kver}"'
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
