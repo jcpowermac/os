@@ -104,7 +104,9 @@ cat > /boot/grub2/user.cfg <<EOF
 set timeout=5
 menuentry "Fedora (Xen dom0)" --class fedora {
   multiboot2 /xen-${ver}.gz
-  module2 /xen-dom0/vmlinuz ${kargs} ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
+  # intel_iommu=on iommu=pt: IOMMU for PCI passthrough / SR-IOV (2026-10-03
+  # iGPU VF research). Harmless while BIOS VT-d is off (driver just no-ops).
+  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
   module2 /xen-dom0/initrd
 }
 EOF
