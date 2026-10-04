@@ -99,15 +99,29 @@ modules:
   # installs into updates/ and never runs depmod), stripped the way akmods
   # strips (207M/177M unstripped i915.ko/xe.ko is 400M of debug info in every
   # image), then depmod so `modinfo -n i915` resolves to weak-updates.
-  # Ref = branch kernel-v7.2, NOT a master tag: upstream's 2026.09.16 notes say
-  # it is the last master release for kernels <= 6.18 and that newer kernels
-  # must use kernel-v7.2, which carries the 7.2 conftest fixes (head 8f9112d
-  # "add conftest for drm_client_dev_suspend/resume"). Both report version
-  # 2026.09.16-sriov (same PACKAGE_VERSION), so `modinfo -F version` cannot
-  # tell them apart — the discriminator is srcversion: the kernel-v7.2 build is
-  # A7406AFAA9149A6F52DCCBF, the old master-tag build was 909F33CF13511056FB511A7.
-  # Verified: this branch builds against our 7.2.8-200.fc44 headers with rc=0
-  # and all four .ko.
+  # Ref = tag 2026.09.16 (master). kernel-v7.2 was tried on 2026-10-04 and is
+  # reverted: it builds clean against our 7.2.8-200.fc44 headers (all four .ko,
+  # head 8f9112d "add conftest for drm_client_dev_suspend/resume") but its i915
+  # cannot fetch the GuC microcode on this box — every boot, native AND Xen, both
+  # early (systemd-modules-load) and late (manual modprobe), both PF and non-PF:
+  #   GT0: GuC firmware i915/mtl_guc_70.bin: fetch failed -EACCES
+  #   GT0: GuC initialization failed -ENOEXEC -> Enabling uc failed (-5)
+  #   GT0: Failed to initialize GPU, declaring it wedged!
+  #   IOV: Initialization failed (-EIO) GT wedged -> No VFs could be associated
+  # which wedges the GT (sddm starts, the sway greeter dies at once with "Failed
+  # to create renderer", dom0 has no UI) and kills the SR-IOV goal too. The
+  # 2026.09.16 build on the same kernel/files fetched GuC fine in every boot of
+  # that image the same day. intel_uc_fw.c and intel_uc.c are byte-identical
+  # between those two refs *and* the 2026.09.16 tag, so the cause is somewhere
+  # else in the v7.2 tree (its 7.2 conftest picks are the obvious candidate); the
+  # error is reported through intel_uc_fw_fetch's single fail label, which funnels
+  # the request, the header/version checks and the GEM object creation into the
+  # same "fetch failed" line, so -EACCES is not proven to come from the loader.
+  # The uncompressed-ucode snippet below removes the one other variable.
+  # Both refs report version 2026.09.16-sriov (same PACKAGE_VERSION), so
+  # `modinfo -F version` cannot tell them apart — the discriminator is
+  # srcversion: kernel-v7.2 = A7406AFAA9149A6F52DCCBF (wedged GPU),
+  # 2026.09.16 tag = 909F33CF13511056FB511A7 (working).
   # weak-updates priority is a *modprobe* rule and holds only POST-PIVOT:
   # dracut installs the kernel RPM's in-tree i915 into the initrd, which binds
   # 00:02.0 before switch_root and can then never be replaced (same module
@@ -121,13 +135,28 @@ modules:
   # Re-baked on every image rebuild; that is how this dom0 gets kernel
   # updates. Needs the dom0 booted with intel_iommu=on iommu=pt
   # (xen-dom0-refresh) and BIOS VT-d on.
-  # https://github.com/strongtz/i915-sriov-dkms (kernel-v7.2) — handoff-2026-10-03.md thread 2.
+  # https://github.com/strongtz/i915-sriov-dkms (tag 2026.09.16) — handoff-2026-10-03.md thread 2.
   # kernel-devel (which pulls kernel-core of the same version) pins the image
   # to one kernel, so the built modules always match the booted kernel.
   - type: script
     snippets:
-      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch kernel-v7.2 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
+      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
       - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; strip --strip-debug "$DEST"/*.ko; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
+  # Uncompressed i915 microcode. Fedora ships linux-firmware xz-compressed, so
+  # /usr/lib/firmware/i915 contains mtl_guc_70.bin.xz and NO mtl_guc_70.bin — yet
+  # i915 requests both by the plain name ("i915/mtl_dmc.bin", "i915/mtl_guc_70.bin").
+  # The DMC fetch succeeds against the .xz (request_firmware, whose fs loader tries
+  # `<name>.xz`); the GuC fetch (intel_uc_fw_fetch -> firmware_request_nowarn,
+  # FW_OPT_NOCACHE) is the one that has failed here ("fetch failed -EACCES",
+  # 2026-10-04, see the revert note above), so baking the plain .bin removes the
+  # compressed-only-blob variable. ~2 MB, i915 ucode only (GuC + HuC), not the
+  # whole firmware tree. This is a targeted test, not a proven mechanism: the two
+  # refs' intel_uc_fw.c are byte-identical, so if the v7.2 build still fails with
+  # a plain .bin present, the blob format was never the cause and the branch is.
+  # `test -s` makes an upstream rename fail the image build instead of the boot.
+  - type: script
+    snippets:
+      - 'set -euxo pipefail; for f in mtl_guc_70.bin mtl_huc_gsc.bin; do xz -dk "/usr/lib/firmware/i915/${f}.xz"; test -s "/usr/lib/firmware/i915/${f}"; done'
   # The `files` module is what actually copies files/system/** into the image.
   # It was missing from this recipe, so the whole files/ tree was dead weight:
   # the deployed commit has no /usr/etc/yum.repos.d/{tailscale,twingate}.repo, no
