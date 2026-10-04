@@ -93,42 +93,66 @@ modules:
       - gcc
       - git
   # i915-sriov: SR-IOV-patched i915 (+xe, kvmgt, intel_sriov_compat) kernel
-  # modules (strongtz/i915-sriov-dkms 2026.09.16, BUILD_EXCLUSIVE_KERNEL
-  # 6.17-7.2). Baked at image build using the Fedora akmods pattern (same as
+  # modules. Baked at image build using the Fedora akmods pattern (same as
   # ublue/bazzite): plain `make` against /usr/src/kernels/<kver>, .ko copied
   # to /usr/lib/modules/<kver>/weak-updates/ (NOT dkms — on ostree, dkms
   # installs into updates/ and never runs depmod), stripped the way akmods
   # strips (207M/177M unstripped i915.ko/xe.ko is 400M of debug info in every
   # image), then depmod so `modinfo -n i915` resolves to weak-updates.
-  # weak-updates has higher modprobe priority than any kernel-tree copy, and
-  # that only holds POST-PIVOT: dracut builds the initrd from the kernel RPM's
-  # in-tree files, so the initrd carries the stock i915 and binds the iGPU
-  # before switch_root (2026-10-04: `i915: unknown parameter max_vfs ignored`
-  # in every boot). xen-dom0-refresh keeps that from happening with
-  # rd.driver.blacklist=i915 on the dom0 kernel command line.
+  # Ref = branch kernel-v7.2, NOT a master tag: upstream's 2026.09.16 notes say
+  # it is the last master release for kernels <= 6.18 and that newer kernels
+  # must use kernel-v7.2, which carries the 7.2 conftest fixes (head 8f9112d
+  # "add conftest for drm_client_dev_suspend/resume"). Both report version
+  # 2026.09.16-sriov (same PACKAGE_VERSION), so `modinfo -F version` cannot
+  # tell them apart — the discriminator is srcversion: the kernel-v7.2 build is
+  # A7406AFAA9149A6F52DCCBF, the old master-tag build was 909F33CF13511056FB511A7.
+  # Verified: this branch builds against our 7.2.8-200.fc44 headers with rc=0
+  # and all four .ko.
+  # weak-updates priority is a *modprobe* rule and holds only POST-PIVOT:
+  # dracut installs the kernel RPM's in-tree i915 into the initrd, which binds
+  # 00:02.0 before switch_root and can then never be replaced (same module
+  # name, already loaded). Blacklists cannot fix that either — they key on the
+  # name, and both copies are i915, so `rd.driver.blacklist=i915` blocked the
+  # patched copy too and (dracut writes it under /run, which survives
+  # switch_root) also killed the real-root autoload: 2026-10-04 dom0 with no
+  # /dev/dri and no UI. The fix is by FILE, not by name:
+  # /etc/dracut.conf.d/60-xen-dom0-igpu.conf omits i915+xe from the initrd, so
+  # real-root coldplug autoloads the patched copy. No blacklist, no forced load.
   # Re-baked on every image rebuild; that is how this dom0 gets kernel
   # updates. Needs the dom0 booted with intel_iommu=on iommu=pt
-  # (xen-dom0-refresh) and BIOS VT-d on; the VF module params
-  # (i915.max_vfs=7, ...) go in the cmdline at VF bring-up.
-  # https://github.com/strongtz/i915-sriov-dkms — handoff-2026-10-03.md thread 2.
+  # (xen-dom0-refresh) and BIOS VT-d on.
+  # https://github.com/strongtz/i915-sriov-dkms (kernel-v7.2) — handoff-2026-10-03.md thread 2.
   # kernel-devel (which pulls kernel-core of the same version) pins the image
   # to one kernel, so the built modules always match the booted kernel.
   - type: script
     snippets:
-      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
+      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch kernel-v7.2 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
       - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; strip --strip-debug "$DEST"/*.ko; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
-  # Initramfs for the deployment. This does NOT get the patched i915 into the
-  # initrd (dracut installs the in-tree copy — see the note above); it is here
-  # so the image ships a usable initrd and the dom0 entry's
-  # rd.driver.blacklist=i915 is what decides which driver binds.
-  # CAVEAT (2026-10-04, broke the dom0 UI): rd.driver.blacklist writes
-  # /run/modprobe.d/initramfsblacklist.conf, and /run is not cleared at
-  # switch_root — the blacklist survives into the real root, so udev's modalias
-  # autoload refuses i915 post-pivot too and nothing binds 00:02.0 (no /dev/dri,
-  # sddm: "No graphical seats found"). files/system/etc/modules-load.d/i915.conf
-  # is the counterweight: systemd-modules-load names the module explicitly, and
-  # an explicit load ignores `blacklist`, so the weak-updates (patched) i915
-  # binds the PF early in the real root.
+  # The `files` module is what actually copies files/system/** into the image.
+  # It was missing from this recipe, so the whole files/ tree was dead weight:
+  # the deployed commit has no /usr/etc/yum.repos.d/{tailscale,twingate}.repo, no
+  # usr/lib/tmpfiles.d/xen.conf, no xen-dom0-refresh units and no script — all of
+  # those were hand-installed on the dom0 instead, which is why "it's committed
+  # in os" kept failing to explain boot behaviour. It must run BEFORE `initramfs`
+  # so dracut sees /etc/dracut.conf.d/60-xen-dom0-igpu.conf when it builds the
+  # image's initrd.
+  - type: files
+    files:
+      - source: system
+        destination: /
+  # Initramfs for the deployment. dracut installs the IN-TREE i915 into it
+  # (weak-updates priority is a modprobe rule, not a dracut one), and blacklists
+  # key on the module NAME — both copies are named i915 — so there is no way to
+  # say "not the stock one, the patched one" that way: `rd.driver.blacklist=i915`
+  # blocked the patched copy too (and leaked into the real root, since dracut
+  # writes it to /run/modprobe.d/ and /run survives switch_root — 2026-10-04
+  # dead UI). Filter by FILE instead: omit_drivers in
+  # /etc/dracut.conf.d/60-xen-dom0-igpu.conf drops i915+xe out of the initrd
+  # (verified here: scratch `dracut --force` with that conf -> no i915/xe .ko,
+  # no weak-updates deps, 836 other modules plus cryptsetup/xfs/nvme/xen
+  # backends intact, 238M -> 217M), so nothing binds 00:02.0 pre-pivot and
+  # real-root coldplug autoloads the patched weak-updates copy. No blacklist,
+  # no forced load, no name collision.
   - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
