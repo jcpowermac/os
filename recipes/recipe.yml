@@ -92,25 +92,33 @@ modules:
       - kernel-devel
       - gcc
       - git
-  # i915-sriov: SR-IOV-patched i915 (+xe) kernel modules (strongtz/i915-sriov-dkms,
-  # release 2026.09.16, BUILD_EXCLUSIVE_KERNEL 6.17-7.2). Baked at image build:
-  # cloned + dkms-built against the image's kernel-devel, installed to
-  # /lib/modules/<kver>/updates (depmod'd). Re-baked on every image rebuild,
-  # which is how this dom0 gets kernel updates. Needs the dom0 booted with
-  # intel_iommu=on iommu=pt (xen-dom0-refresh) and BIOS VT-d on; the VF module
-  # params (i915.max_vfs=7, ...) go in the cmdline at VF bring-up.
+  # i915-sriov: SR-IOV-patched i915 (+xe, kvmgt, intel_sriov_compat) kernel
+  # modules (strongtz/i915-sriov-dkms 2026.09.16, BUILD_EXCLUSIVE_KERNEL
+  # 6.17-7.2). Baked at image build using the Fedora akmods pattern (same as
+  # ublue/bazzite): plain `make` against /usr/src/kernels/<kver>, .ko copied
+  # to /usr/lib/modules/<kver>/weak-updates/ (NOT dkms — on ostree, dkms
+  # installs into updates/ and never runs depmod, so dracut's
+  # --no-hostonly, which copies from modules.dep, never sees the modules and
+  # the initramfs keeps the old i915), then depmod so weak-updates/i915.ko.xz
+  # is the entry the initramfs module's dracut --no-hostonly picks up.
+  # weak-updates has higher modprobe priority than any kernel-tree copy,
+  # which is what stops the stock i915 shadowing the patched one.
+  # Re-baked on every image rebuild; that is how this dom0 gets kernel
+  # updates. Needs the dom0 booted with intel_iommu=on iommu=pt
+  # (xen-dom0-refresh) and BIOS VT-d on; the VF module params
+  # (i915.max_vfs=7, ...) go in the cmdline at VF bring-up.
   # https://github.com/strongtz/i915-sriov-dkms — handoff-2026-10-03.md thread 2.
-  # kernel-devel (which pulls kernel-core of the same version) pins the image to
-  # one kernel, so the built modules always match the booted kernel.
+  # kernel-devel (which pulls kernel-core of the same version) pins the image
+  # to one kernel, so the built modules always match the booted kernel.
   - type: script
     snippets:
-      - 'set -e; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
-      - 'set -e; kver=$(ls /usr/src/kernels/); echo "building i915-sriov-dkms against ${kver}"; cd /src/i915-sriov-dkms && dkms add . && dkms build i915-sriov-dkms/2026.09.16 -k "${kver}" && dkms install i915-sriov-dkms/2026.09.16 -k "${kver}"'
-  # Regenerate the initramfs AFTER the dkms bake: the default image initramfs
-  # embeds the stock kernel i915/xe (its dracut predates the extra/ modules),
-  # and the stock i915 loads pre-pivot, shadowing the SR-IOV-patched one.
-  # Observed 2026-10-04: running i915 had no sriov_configure despite a clean
-  # dkms build; deployment initramfs contained kernel/.../i915.ko.xz only.
+      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
+      - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
+  # Regenerate the initramfs AFTER the modules land in weak-updates and
+  # depmod runs (bazzite build-initramfs equivalent): dracut --no-hostonly
+  # copies every module listed in modules.dep, so the weak-updates i915 set
+  # is what loads pre-pivot. Without this the initramfs keeps whatever i915
+  # it had, which loads before / and shadows the patched module.
   - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
