@@ -21,6 +21,25 @@ set -uo pipefail
 
 log() { echo "xen-dom0-refresh: $*" >&2; }
 
+# --- 0. local SELinux policy: /usr/share/selinux/local/*.cil -> the store -----
+# The SELinux module store is host state (/var/lib/selinux), so a bootc image can
+# only ship the policy *source*, not an installed module. Install anything we
+# ship under /usr/share/selinux/local, idempotently; this runs from the
+# finalize-staged ExecStopPost hook (so it is in place before the next boot) and
+# from the every-boot service. CIL needs no build step (semodule is in
+# policycoreutils), so no devel package is required in the image.
+# Today that is one file: xenstored-search-xend-var-lib (the C xenstored needs
+# dir search on /var/lib/xen = xend_var_lib_t, which Fedora's targeted policy
+# denies; see the .cil for the verification).
+for cil in /usr/share/selinux/local/*.cil; do
+  [ -e "$cil" ] || continue
+  mod=$(basename "$cil" .cil)
+  if ! semodule -l 2>/dev/null | grep -qE "^${mod}([[:space:]]|$)"; then
+    if semodule -i "$cil"; then log "installed local SELinux module ${mod}"
+    else log "semodule -i ${mod} FAILED (denials from it will keep being logged)"; fi
+  fi
+done
+
 # --- 1. restore /boot xen payload if the image build dropped it -------------
 # rpm names the payload /boot/xen-<VERSION>.gz (no release suffix)
 ver=$(rpm -q --qf '%{VERSION}' xen-hypervisor 2>/dev/null) || exit 0

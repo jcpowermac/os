@@ -1,0 +1,15 @@
+; xenstored has to traverse /var/lib/xen. Fedora's policy maps that directory to
+; xend_var_lib_t and grants xenstored_t nothing on it, while the C xenstored
+; hardcodes /var/lib/xen/xenstore (its live-update state dir) — so every dom0
+; boot logs:
+;   avc: denied { search } comm="xenstored" tcontext=xend_var_lib_t tclass=dir
+; xenstored --help offers no state-dir option (and switching to oxenstored is not
+; on the table: the C store is what qlvm/libxl quota support targets), so this is
+; a policy gap, and the fix is exactly one permission: read/write/add_name on the
+; same dir stay DENY, verified against the live policy with libselinux
+; selinux_check_access() before and after `semodule -i` of this file.
+;
+; Installed by xen-dom0-refresh (section 0) from the ostree-finalize-staged hook,
+; i.e. before the next boot, idempotently. CIL needs no build step, so the image
+; carries source and `semodule` (policycoreutils, always present) compiles it.
+(allow xenstored_t xend_var_lib_t (dir (search)))
