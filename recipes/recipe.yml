@@ -97,12 +97,15 @@ modules:
   # 6.17-7.2). Baked at image build using the Fedora akmods pattern (same as
   # ublue/bazzite): plain `make` against /usr/src/kernels/<kver>, .ko copied
   # to /usr/lib/modules/<kver>/weak-updates/ (NOT dkms — on ostree, dkms
-  # installs into updates/ and never runs depmod, so dracut's
-  # --no-hostonly, which copies from modules.dep, never sees the modules and
-  # the initramfs keeps the old i915), then depmod so weak-updates/i915.ko.xz
-  # is the entry the initramfs module's dracut --no-hostonly picks up.
-  # weak-updates has higher modprobe priority than any kernel-tree copy,
-  # which is what stops the stock i915 shadowing the patched one.
+  # installs into updates/ and never runs depmod), stripped the way akmods
+  # strips (207M/177M unstripped i915.ko/xe.ko is 400M of debug info in every
+  # image), then depmod so `modinfo -n i915` resolves to weak-updates.
+  # weak-updates has higher modprobe priority than any kernel-tree copy, and
+  # that only holds POST-PIVOT: dracut builds the initrd from the kernel RPM's
+  # in-tree files, so the initrd carries the stock i915 and binds the iGPU
+  # before switch_root (2026-10-04: `i915: unknown parameter max_vfs ignored`
+  # in every boot). xen-dom0-refresh keeps that from happening with
+  # rd.driver.blacklist=i915 on the dom0 kernel command line.
   # Re-baked on every image rebuild; that is how this dom0 gets kernel
   # updates. Needs the dom0 booted with intel_iommu=on iommu=pt
   # (xen-dom0-refresh) and BIOS VT-d on; the VF module params
@@ -113,12 +116,11 @@ modules:
   - type: script
     snippets:
       - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
-      - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
-  # Regenerate the initramfs AFTER the modules land in weak-updates and
-  # depmod runs (bazzite build-initramfs equivalent): dracut --no-hostonly
-  # copies every module listed in modules.dep, so the weak-updates i915 set
-  # is what loads pre-pivot. Without this the initramfs keeps whatever i915
-  # it had, which loads before / and shadows the patched module.
+      - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; strip --strip-debug "$DEST"/*.ko; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
+  # Initramfs for the deployment. This does NOT get the patched i915 into the
+  # initrd (dracut installs the in-tree copy — see the note above); it is here
+  # so the image ships a usable initrd and the dom0 entry's
+  # rd.driver.blacklist=i915 is what decides which driver binds.
   - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 

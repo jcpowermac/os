@@ -67,33 +67,45 @@ fi
 # (staged or booted). Its boot tree is found by resolving symlinks: ostree
 # names boot trees by the bootconfig tree's checksum (a different namespace
 # from the deployment commit), but each tree has 0 -> the deployment dir.
-# Scan boot.0 only: before finalize, the staged tree lives under a fresh
-# boot.N version and its kernel is not yet on the boot partition, so
-# ostree= would dangle and the hardlink could not exist — the finalize
-# hook (runs after the boot.0 swap) is when both become true.
+# Match any canonical /ostree/boot.<N>/ tree, not just boot.0: after a
+# reboot the booted deployment sits under boot.1 and there is no boot.0 at
+# all here, so a boot.0-only scan never matched and the fallback below
+# paired the OLD kernel+initrd with the NEW ostree= (2026-10-04 split-brain
+# boot: stock i915 from the previous deployment bound the iGPU). Only the
+# boot.<N> symlink name is a valid ostree= arg — /ostree/boot.1 is a symlink
+# to boot.1.1, so both glob; the boot.<N>.<serial> form is skipped.
+# A staged tree that is not finalized yet has no /boot payload: skip it and
+# let the finalize hook (runs after the boot.N swap) pick it up.
 commit=$(ostree admin status --json 2>/dev/null | grep -oE '"checksum": *"[a-f0-9]{64}"' | head -1 | sed -E 's/.*"([a-f0-9]{64})"/\1/')
 dep="/ostree/deploy/fedora/deploy/${commit}.0"
 
 kfile="" ifile="" ostree_arg=""
 if [ -n "$commit" ] && [ -d "$dep" ]; then
-  for bt in /ostree/boot.0/fedora/*/; do
+  for bt in /ostree/boot.*/fedora/*/; do
+    b=${bt#/ostree/}; b=${b%%/*}
+    v=${b#boot.}; case $v in ''|*[!0-9]*) continue ;; esac
     [ -e "${bt}0" ] || continue
     [ "$(readlink -f "${bt}0")" = "$(readlink -f "$dep")" ] || continue
     n=$(basename "$bt")
-    ostree_arg="/ostree/boot.0/fedora/${n}/0"
     kdir="/boot/ostree/fedora-${n}"
     kfile=$(ls "$kdir"/vmlinuz-* 2>/dev/null | head -1)
+    [ -n "$kfile" ] || continue
     ifile=$(ls "$kdir"/initramfs-* 2>/dev/null | head -1)
+    ostree_arg="/ostree/${b}/fedora/${n}/0"
     break
   done
 fi
 # fallback: no match (fresh install, crash between stage and finalize) —
-# the running kernel's payload
+# the tree we are actually booted from, per our own ostree= karg, then the
+# newest /boot tree. Never a plain glob: two deployments of one kernel
+# release sort alphabetically and the stale one won (fedora-3024645a <
+# fedora-5bd4e562) — that is how the pairing bug above survived.
 if [ -z "$kfile" ]; then
   kr=$(uname -r)
-  for cand in /boot/ostree/*/; do
-    if [ -f "${cand}vmlinuz-${kr}" ]; then
-      d=${cand%/}
+  runhash=$(sed -n 's|.*/fedora/\([a-f0-9]*\)/.*|\1|p' /proc/cmdline)
+  for d in ${runhash:+/boot/ostree/fedora-${runhash}} $(ls -dt /boot/ostree/fedora-*/ 2>/dev/null); do
+    d=${d%/}
+    if [ -f "${d}/vmlinuz-${kr}" ]; then
       kfile="${d}/vmlinuz-${kr}"
       ifile="${d}/initramfs-${kr}.img"
       break
@@ -114,18 +126,28 @@ else
   log "no kernel on boot partition for default deployment; keeping /boot/xen-dom0"
 fi
 
-# --- 3b. initramfs: nothing to fix -------------------------------------------
-# The dom0 initrd does NOT need i915/xe. Plain dracut does not embed
-# out-of-tree /lib/modules/<kver>/extra/ modules (45drm's symbol scan covers
-# the kernel tree only), and it doesn't matter: the Xen dom0 boots the
-# initrd with a fallback framebuffer, and post-pivot udev loads the patched
-# extra/i915.ko.xz from the rootfs (modules.dep resolves i915 -> extra/).
-# Verified live 2026-10-04: an initrd with zero GPU modules still boots with
-# the patched i915 (srcversion match) running. Do NOT regenerate the initrd
-# here — that replaces the deployment-tracking symlink with a plain file.
+# --- 3b. initramfs: the in-tree i915 is blacklisted, not removed ------------
+# dracut installs the IN-TREE kernel/drivers/gpu/drm/i915/i915.ko into the
+# dom0 initrd, never the akmods-pattern weak-updates copy (verified
+# 2026-10-04: lsinitrd both trees -> i915.ko.xz 1850836, no
+# weak-updates/i915.ko). weak-updates priority is a *modprobe* rule; the
+# initrd's module set comes from the kernel RPM's own files. So i915 loads at
+# ~8 s, pre-pivot, binds 00:02.0, and after switch_root nothing reloads an
+# already-loaded module — dmesg `i915: unknown parameter max_vfs ignored`
+# means the STOCK driver is running, which is what every attempt here hit.
+# rd.driver.blacklist= below is dracut's initrd-only blacklist (it writes
+# /run/modprobe.d/initramfsblacklist.conf inside the initrd, gone at pivot;
+# usr/bin/dracut-pre-udev is present in both trees' initrds), so udev
+# cold-plugs in the real root and modprobe resolves i915 -> weak-updates
+# (verified: modinfo -n i915). The patched .ko is loadable against this
+# kernel: identical vermagic and deps, every symbol the SR-IOV code adds
+# (pci_enable_sriov, pci_sriov_*, sysfs_*, synchronize_srcu, crc32_le) is
+# exported by vmlinux, and CONFIG_MODVERSIONS is off so there is no CRC gate.
+# Do NOT regenerate the initrd here — that replaces the deployment-tracking
+# hardlink with a plain file.
 
 kargs=$(tr ' ' '\n' < /proc/cmdline |
-  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*|intel_iommu=.*|iommu=.*|i915\..*|xe\..*|module_blacklist=.*)$' |
+  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*|intel_iommu=.*|iommu=.*|i915\..*|xe\..*|module_blacklist=.*|rd\.driver\.blacklist=.*)$' |
   paste -sd' ')
 
 [ -n "$ostree_arg" ] || { log "no valid ostree= arg; keeping existing user.cfg"; exit 0; }
@@ -142,7 +164,7 @@ menuentry "Fedora (Xen dom0)" --class fedora {
   multiboot2 /xen-${ver}.gz
   # intel_iommu=on iommu=pt: IOMMU for PCI passthrough / SR-IOV (2026-10-03
   # iGPU VF research). Harmless while BIOS VT-d is off (driver just no-ops).
-  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt i915.enable_guc=3 i915.max_vfs=7 module_blacklist=xe ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
+  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt i915.enable_guc=3 i915.max_vfs=7 module_blacklist=xe rd.driver.blacklist=i915 ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
   module2 /xen-dom0/initrd
 }
 EOF
