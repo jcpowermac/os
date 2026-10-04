@@ -1,16 +1,22 @@
 #!/usr/bin/bash
 # xen-dom0-refresh: keep the hand-rolled GRUB Xen dom0 entry in sync with the
-# running ostree deployment. Best-effort — must never fail boot.
+# deployment GRUB will next boot (ostree's default deployment, index 0).
+# Best-effort — must never fail boot.
 #
-# Triggered by xen-dom0-refresh.path (new ostree deployment dirs appear under
-# /ostree/deploy/fedora/) and xen-dom0-refresh.service (every boot, covers
-# updates applied while the machine was off).
+# Run from:
+#  - ostree-finalize-staged.service ExecStopPost (drop-in): after ostree
+#    rewrites /boot/loader/entries and re-points boot.N at shutdown, so the
+#    Xen entry tracks the deployment the update is about to boot.
+#  - xen-dom0-refresh.path (deployment changes while running) and
+#    xen-dom0-refresh.service (every boot, covers changes while the machine
+#    was off).
 #
-# Background: Atomic installs never run grub2-install, so GRUB user config
-# goes in /boot/grub2/user.cfg (sourced by the static grub.cfg before blscfg,
-# making our entry menu item 0 = default). The image build loses the
-# xen-hypervisor /boot payloads (the real /boot partition shadows the ostree
-# root's /boot), so we restore them from the rpm when missing.
+# Background: ostree staged updates create a second, NATIVE boot path — the
+# BLS entries in /boot/loader/entries. Picking one at the GRUB menu boots
+# the dom0 without Xen (xl dies, all VMs die). The Xen entry in user.cfg is
+# menu item 0 and forces `default=0`, so the auto-boot always takes the Xen
+# entry; this script keeps its kernel + ostree= arg in step with the default
+# deployment, so "boot via Xen" and "boot the update" are the same choice.
 set -uo pipefail
 
 log() { echo "xen-dom0-refresh: $*" >&2; }
@@ -56,58 +62,88 @@ if [ ! -f /boot/grub2/x86_64-efi/multiboot2.mod ] && [ -d /usr/lib/grub/x86_64-e
   log "copied grub modules to /boot/grub2/x86_64-efi"
 fi
 
-# --- 3. dom0 kernel/initrd hardlinks (GRUB cannot follow symlinks) ----------
-kr=$(uname -r)
-d=""
-for cand in /boot/ostree/*/; do
-  if [ -f "${cand}vmlinuz-${kr}" ]; then d=${cand%/}; break; fi
-done
-if [ -n "$d" ]; then
-  mkdir -p /boot/xen-dom0
-  ln -f "$d/vmlinuz-${kr}" /boot/xen-dom0/vmlinuz
-  ln -f "$d/initramfs-${kr}.img" /boot/xen-dom0/initrd
-else
-  log "no /boot/ostree kernel dir for $(uname -r); skipping hardlinks"
+# --- 3. dom0 kernel/initrd + ostree= for the DEFAULT deployment ------------
+# deployments[0] in `ostree admin status` is what ostree will boot next
+# (staged or booted). Its boot tree is found by resolving symlinks: ostree
+# names boot trees by the bootconfig tree's checksum (a different namespace
+# from the deployment commit), but each tree has 0 -> the deployment dir.
+# Scan boot.0 only: before finalize, the staged tree lives under a fresh
+# boot.N version and its kernel is not yet on the boot partition, so
+# ostree= would dangle and the hardlink could not exist — the finalize
+# hook (runs after the boot.0 swap) is when both become true.
+commit=$(ostree admin status --json 2>/dev/null | grep -oE '"checksum": *"[a-f0-9]{64}"' | head -1 | sed -E 's/.*"([a-f0-9]{64})"/\1/')
+dep="/ostree/deploy/fedora/deploy/${commit}.0"
+
+kfile="" ifile="" ostree_arg=""
+if [ -n "$commit" ] && [ -d "$dep" ]; then
+  for bt in /ostree/boot.0/fedora/*/; do
+    [ -e "${bt}0" ] || continue
+    [ "$(readlink -f "${bt}0")" = "$(readlink -f "$dep")" ] || continue
+    n=$(basename "$bt")
+    ostree_arg="/ostree/boot.0/fedora/${n}/0"
+    kdir="/boot/ostree/fedora-${n}"
+    kfile=$(ls "$kdir"/vmlinuz-* 2>/dev/null | head -1)
+    ifile=$(ls "$kdir"/initramfs-* 2>/dev/null | head -1)
+    break
+  done
 fi
-
-# --- 4. user.cfg: Xen dom0 entry for the DEFAULT deployment ----------------
-# The ostree= kernel arg must NOT be copied from /proc/cmdline: that is the
-# RUNNING boot's arg, and ostree re-labels boot.N (e.g. boot.0 -> boot.1) when
-# a new deployment is staged, dangling the old arg and killing the next Xen
-# boot (initramfs drops to rd.shell). Instead: take the default deployment's
-# commit from `ostree admin status`, find the boot.N tree that actually
-# contains it, and verify the full path exists before writing.
-kargs=$(tr ' ' '\n' < /proc/cmdline |
-  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*)$' |
-  paste -sd' ')
-
-ostree_arg=""
-def_commit=$(ostree admin status --json 2>/dev/null | grep -oE '"checksum": *"[a-f0-9]+"' | head -1 | sed -E 's/.*"([a-f0-9]+)"/\1/')
-if [ -n "$def_commit" ]; then
-  for boot in /ostree/boot.*/; do
-    if [ -e "${boot}fedora/${def_commit}/0" ]; then
-      ostree_arg="/ostree/$(basename "${boot%/}")/fedora/${def_commit}/0"
+# fallback: no match (fresh install, crash between stage and finalize) —
+# the running kernel's payload
+if [ -z "$kfile" ]; then
+  kr=$(uname -r)
+  for cand in /boot/ostree/*/; do
+    if [ -f "${cand}vmlinuz-${kr}" ]; then
+      d=${cand%/}
+      kfile="${d}/vmlinuz-${kr}"
+      ifile="${d}/initramfs-${kr}.img"
       break
     fi
   done
 fi
-# fallback: running boot's arg, only if it still exists on disk
+# fallback ostree=: running boot's arg, only if it still exists on disk
 if [ -z "$ostree_arg" ]; then
   cand=$(sed -n 's/.*\bostree=\([^ ]*\).*/\1/p' /proc/cmdline)
   [ -n "$cand" ] && [ -e "$cand" ] && ostree_arg="$cand"
 fi
+
+if [ -n "$kfile" ] && [ -f "$kfile" ]; then
+  mkdir -p /boot/xen-dom0
+  ln -f "$kfile" /boot/xen-dom0/vmlinuz
+  if [ -n "$ifile" ]; then ln -f "$ifile" /boot/xen-dom0/initrd; fi
+else
+  log "no kernel on boot partition for default deployment; keeping /boot/xen-dom0"
+fi
+
+# --- 3b. initramfs: nothing to fix -------------------------------------------
+# The dom0 initrd does NOT need i915/xe. Plain dracut does not embed
+# out-of-tree /lib/modules/<kver>/extra/ modules (45drm's symbol scan covers
+# the kernel tree only), and it doesn't matter: the Xen dom0 boots the
+# initrd with a fallback framebuffer, and post-pivot udev loads the patched
+# extra/i915.ko.xz from the rootfs (modules.dep resolves i915 -> extra/).
+# Verified live 2026-10-04: an initrd with zero GPU modules still boots with
+# the patched i915 (srcversion match) running. Do NOT regenerate the initrd
+# here — that replaces the deployment-tracking symlink with a plain file.
+
+kargs=$(tr ' ' '\n' < /proc/cmdline |
+  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*|intel_iommu=.*|iommu=.*|i915\..*|xe\..*|module_blacklist=.*)$' |
+  paste -sd' ')
+
 [ -n "$ostree_arg" ] || { log "no valid ostree= arg; keeping existing user.cfg"; exit 0; }
 
+# --- 4. user.cfg: Xen dom0 entry, forced default ----------------------------
 cat > /boot/grub2/user.cfg <<EOF
-# Generated by xen-dom0-refresh (xen-dom0-refresh.path/service) — do not edit.
-# Sourced by static grub.cfg before blscfg -> menu entry 0 (default).
+# Generated by xen-dom0-refresh (xen-dom0-refresh + ostree-finalize-staged
+# ExecStopPost) — do not edit.
+# Sourced by the static grub.cfg before blscfg: menu entry 0, forced default
+# — the auto-boot takes the Xen entry, never a native BLS entry.
 set timeout=5
+set default=0
 menuentry "Fedora (Xen dom0)" --class fedora {
   multiboot2 /xen-${ver}.gz
   # intel_iommu=on iommu=pt: IOMMU for PCI passthrough / SR-IOV (2026-10-03
   # iGPU VF research). Harmless while BIOS VT-d is off (driver just no-ops).
-  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
+  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt i915.enable_guc=3 i915.max_vfs=7 module_blacklist=xe ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
   module2 /xen-dom0/initrd
 }
 EOF
-log "wrote /boot/grub2/user.cfg (ostree=${ostree_arg})"
+log "wrote /boot/grub2/user.cfg (default=0, ostree=${ostree_arg}, kernel=${kfile:-kept})"

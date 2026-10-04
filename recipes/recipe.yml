@@ -106,5 +106,11 @@ modules:
     snippets:
       - 'set -e; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
       - 'set -e; kver=$(ls /usr/src/kernels/); echo "building i915-sriov-dkms against ${kver}"; cd /src/i915-sriov-dkms && dkms add . && dkms build i915-sriov-dkms/2026.09.16 -k "${kver}" && dkms install i915-sriov-dkms/2026.09.16 -k "${kver}"'
+  # Regenerate the initramfs AFTER the dkms bake: the default image initramfs
+  # embeds the stock kernel i915/xe (its dracut predates the extra/ modules),
+  # and the stock i915 loads pre-pivot, shadowing the SR-IOV-patched one.
+  # Observed 2026-10-04: running i915 had no sriov_configure despite a clean
+  # dkms build; deployment initramfs contained kernel/.../i915.ko.xz only.
+  - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
