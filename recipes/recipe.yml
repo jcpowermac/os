@@ -121,6 +121,14 @@ modules:
   # initrd (dracut installs the in-tree copy — see the note above); it is here
   # so the image ships a usable initrd and the dom0 entry's
   # rd.driver.blacklist=i915 is what decides which driver binds.
+  # CAVEAT (2026-10-04, broke the dom0 UI): rd.driver.blacklist writes
+  # /run/modprobe.d/initramfsblacklist.conf, and /run is not cleared at
+  # switch_root — the blacklist survives into the real root, so udev's modalias
+  # autoload refuses i915 post-pivot too and nothing binds 00:02.0 (no /dev/dri,
+  # sddm: "No graphical seats found"). files/system/etc/modules-load.d/i915.conf
+  # is the counterweight: systemd-modules-load names the module explicitly, and
+  # an explicit load ignores `blacklist`, so the weak-updates (patched) i915
+  # binds the PF early in the real root.
   - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
