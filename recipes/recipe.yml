@@ -142,21 +142,16 @@ modules:
     snippets:
       - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
       - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; strip --strip-debug "$DEST"/*.ko; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
-  # Uncompressed i915 microcode. Fedora ships linux-firmware xz-compressed, so
-  # /usr/lib/firmware/i915 contains mtl_guc_70.bin.xz and NO mtl_guc_70.bin — yet
-  # i915 requests both by the plain name ("i915/mtl_dmc.bin", "i915/mtl_guc_70.bin").
-  # The DMC fetch succeeds against the .xz (request_firmware, whose fs loader tries
-  # `<name>.xz`); the GuC fetch (intel_uc_fw_fetch -> firmware_request_nowarn,
-  # FW_OPT_NOCACHE) is the one that has failed here ("fetch failed -EACCES",
-  # 2026-10-04, see the revert note above), so baking the plain .bin removes the
-  # compressed-only-blob variable. ~2 MB, i915 ucode only (GuC + HuC), not the
-  # whole firmware tree. This is a targeted test, not a proven mechanism: the two
-  # refs' intel_uc_fw.c are byte-identical, so if the v7.2 build still fails with
-  # a plain .bin present, the blob format was never the cause and the branch is.
-  # `test -s` makes an upstream rename fail the image build instead of the boot.
-  - type: script
-    snippets:
-      - 'set -euxo pipefail; for f in mtl_guc_70.bin mtl_huc_gsc.bin; do xz -dk "/usr/lib/firmware/i915/${f}.xz"; test -s "/usr/lib/firmware/i915/${f}"; done'
+  # NB: do NOT bake uncompressed i915 ucode here — a plain mtl_guc_70.bin /
+  # mtl_huc_gsc.bin was tried on 2026-10-04 and it wedged the GT harder.
+  # Fedora ships these xz-only
+  # (intel-gpu-firmware) and the loader does fall back to `<name>.xz`, but ONLY when
+  # the plain-name attempt returns exactly -ENOENT
+  # (drivers/base/firmware_loader/main.c:880-886). An uncompressed copy that the
+  # kernel cannot read (-EACCES) therefore shadows the .xz that it can, and GuC never
+  # loads: "fetch failed -EACCES" -> -ENOEXEC -> "Failed to initialize GPU, declaring
+  # it wedged" -> "IOV: Initialization failed (-EIO) GT wedged" -> "No VFs could be
+  # associated with this PF".
   # The `files` module is what actually copies files/system/** into the image.
   # It was missing from this recipe, so the whole files/ tree was dead weight:
   # the deployed commit has no /usr/etc/yum.repos.d/{tailscale,twingate}.repo, no
