@@ -40,36 +40,43 @@ for cil in /usr/share/selinux/local/*.cil; do
   fi
 done
 
-# --- 1. restore /boot xen payload if the image build dropped it -------------
-# rpm names the payload /boot/xen-<VERSION>.gz (no release suffix)
-ver=$(rpm -q --qf '%{VERSION}' xen-hypervisor 2>/dev/null) || exit 0
-pkgver=$(rpm -q --qf '%{VERSION}-%{RELEASE}' xen-hypervisor)
-if [ ! -f "/boot/xen-${ver}.gz" ]; then
-  base="xen-hypervisor-${pkgver}.x86_64.rpm"
-  fedora=$(rpm -E %fedora)
-  tmp=""
-  for url in \
-    "https://dl.fedoraproject.org/pub/fedora/linux/updates/${fedora}/Everything/x86_64/Packages/x/${base}" \
-    "https://dl.fedoraproject.org/pub/fedora/linux/releases/${fedora}/Everything/x86_64/os/Packages/x/${base}"; do
-    tmp=$(mktemp)
-    if curl -fsSL --max-time 120 -o "$tmp" "$url" && rpm -qlp "$tmp" >/dev/null 2>&1; then
-      break
-    fi
-    rm -f "$tmp"
-    tmp=""
-  done
-  if [ -n "$tmp" ]; then
-    t=$(mktemp -d)
-    if (cd "$t" && rpm2cpio "$tmp" | cpio -idm --quiet './boot/*') 2>/dev/null; then
-      install -m644 "$t"/boot/xen-*.gz "$t"/boot/xen-*.config /boot/
-      install -d -m755 /boot/flask
-      install -m644 "$t"/boot/flask/* /boot/flask/ 2>/dev/null || true
-      log "restored /boot xen payload for ${ver}"
-    fi
-    rm -rf "$t" "$tmp"
-  else
-    log "could not download ${base}"
+# --- 1. /boot xen payload: copy from the deployment tree, never the network --
+# The xen-hypervisor rpm installs the multiboot2 payload into the image's
+# /boot at build time, so every deployment commit ships it under
+# <deploy>/boot/ (xen-<VER>.gz, .config, flask/). On the running system the
+# host /boot partition shadows the commit's /boot, so the files are
+# unreachable at /boot — but they are always present in the deployment tree
+# this script pairs the Xen entry with. Copy from there: local, offline,
+# and locked to the same commit the kernel comes from.
+# (2026-10-05: this section used to re-download the rpm from
+# dl.fedoraproject.org when the payload was absent from the host /boot. That
+# raced DNS at boot — the every-boot service ran before name resolution was
+# up, the download failed, and the Xen entry pointed at a missing file. The
+# deployment tree makes the download unnecessary.)
+commit=$(ostree admin status --json 2>/dev/null | grep -oE '"checksum": *"[a-f0-9]{64}"' | head -1 | sed -E 's/.*"([a-f0-9]{64})"/\1/')
+dep="/ostree/deploy/fedora/deploy/${commit}.0"
+
+ver=""
+if [ -d "$dep" ]; then
+  p=$(ls "$dep"/boot/xen-*.gz 2>/dev/null | head -1)
+  if [ -n "$p" ]; then
+    install -m644 "$p" /boot/
+    install -m644 "$dep"/boot/xen-*.config /boot/ 2>/dev/null || true
+    install -d -m755 /boot/flask
+    install -m644 "$dep"/boot/flask/* /boot/flask/ 2>/dev/null || true
+    ver=${p##*/xen-}; ver=${ver%.gz}
+    log "installed /boot xen payload ${ver} from ${dep}"
   fi
+fi
+# fallback: no payload in the default deployment tree (e.g. non-container
+# deployment) but a previous one is on the host /boot — keep it.
+if [ -z "$ver" ]; then
+  p=$(ls /boot/xen-*.gz 2>/dev/null | head -1)
+  if [ -n "$p" ]; then ver=${p##*/xen-}; ver=${ver%.gz}; fi
+fi
+if [ -z "$ver" ] || [ ! -f "/boot/xen-${ver}.gz" ]; then
+  log "no xen payload available; not updating user.cfg"
+  exit 0
 fi
 
 # --- 2. GRUB modules (no grub2-install on atomic; module2 lives in multiboot2.mod)
@@ -95,8 +102,7 @@ fi
 # to boot.1.1, so both glob; the boot.<N>.<serial> form is skipped.
 # A staged tree that is not finalized yet has no /boot payload: skip it and
 # let the finalize hook (runs after the boot.N swap) pick it up.
-commit=$(ostree admin status --json 2>/dev/null | grep -oE '"checksum": *"[a-f0-9]{64}"' | head -1 | sed -E 's/.*"([a-f0-9]{64})"/\1/')
-dep="/ostree/deploy/fedora/deploy/${commit}.0"
+# (commit/dep are resolved in section 1.)
 
 kfile="" ifile="" ostree_arg=""
 if [ -n "$commit" ] && [ -d "$dep" ]; then
