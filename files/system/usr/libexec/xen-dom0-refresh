@@ -145,28 +145,11 @@ else
   log "no kernel on boot partition for default deployment; keeping /boot/xen-dom0"
 fi
 
-# --- 3b. initramfs: the GPU driver is OMITTED from it, not blacklisted ------
-# dracut installs the IN-TREE kernel/drivers/gpu/drm/i915/i915.ko into the
-# dom0 initrd, never the akmods-pattern weak-updates copy (verified 2026-10-04:
-# lsinitrd -> i915.ko.xz 1850836, no weak-updates/i915.ko). weak-updates
-# priority is a *modprobe* rule; the initrd's module set comes from the kernel
-# RPM's own files. So the stock driver loads at ~8 s, pre-pivot, binds 00:02.0,
-# and after switch_root nothing replaces an already-loaded module — dmesg
-# `i915: unknown parameter max_vfs ignored` = the STOCK driver is running.
-# Blacklists cannot select between the two copies: they key on the module NAME
-# and both are named i915. And `rd.driver.blacklist=` is NOT initrd-only:
-# dracut writes /run/modprobe.d/initramfsblacklist.conf, /run is a tmpfs that
-# survives switch_root, so in the real root udev's coldplug found `i915`
-# blacklisted and `xe` blocked by module_blacklist= — nothing bound 00:02.0, no
-# /dev/dri, sddm logged "No graphical seats found" and the dom0 UI was dead
-# (2026-10-04, this exact karg). Verify with: ls /run/modprobe.d/
-# The fix lives in the image instead: /etc/dracut.conf.d/60-xen-dom0-igpu.conf
-# sets omit_drivers=" i915 xe " so the initrd simply has no GPU driver, and
-# real-root coldplug autoloads the patched weak-updates copy. No blacklist of a
-# name we then need, no cmdline module options, no forced early load.
-# (Transitional: dom0s still running an initrd that contains the stock i915 want
-# /etc/modules-load.d/i915.conf + rd.driver.blacklist to keep a working UI; drop
-# both once the omit_drivers image is deployed.)
+# --- 3b. initramfs -----------------------------------------------------------
+# The stock in-tree i915 ships in the initrd (dracut default) and binds 00:02.0
+# pre-pivot; that is the driver we want (2026-10-05: the strongtz i915-sriov
+# weak-updates experiment is abandoned — it wedged the GT on every coldplug
+# boot, and the in-tree i915 has no ARL SR-IOV anyway; see the recipe history).
 # Do NOT regenerate the initrd here — that replaces the deployment-tracking
 # hardlink with a plain file.
 
@@ -186,12 +169,9 @@ set timeout=5
 set default=0
 menuentry "Fedora (Xen dom0)" --class fedora {
   multiboot2 /xen-${ver}.gz
-  # intel_iommu=on iommu=pt: IOMMU for PCI passthrough / SR-IOV (2026-10-03
-  # iGPU VF research). Harmless while BIOS VT-d is off (driver just no-ops).
-  # module_blacklist=xe: kernel-global name block, we never want xe on this box.
-  # NO rd.driver.blacklist here: it leaked into the real root and killed the UI
-  # (see §3b); omit_drivers in the image's dracut conf is the fix.
-  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt i915.enable_guc=3 i915.max_vfs=7 module_blacklist=xe ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
+  # intel_iommu=on iommu=pt: IOMMU for future PCI passthrough. Harmless while
+  # BIOS VT-d is off.
+  module2 /xen-dom0/vmlinuz ${kargs} intel_iommu=on iommu=pt ostree=${ostree_arg} console=hvc0 console=tty0 rd.shell rw
   module2 /xen-dom0/initrd
 }
 EOF

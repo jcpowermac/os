@@ -35,9 +35,7 @@ modules:
       # Sole supplier of /usr/lib/firmware/i915/mtl_guc_70.bin.xz + mtl_huc_gsc.bin.xz
       # (upstream ships these compressed-only; rpm -q --whatrequires intel-gpu-firmware
       # is empty and kernel-core's firmware dep is a Recommends). Listed explicitly
-      # because a base-image or weak-deps change silently deletes the GuC blob, and
-      # that reads as "i915 needs an uncompressed blob" — the 2026-10-04 db87ddf
-      # misdiagnosis. See the note below the i915-sriov module.
+      # so a base-image or weak-deps change cannot silently delete the GuC blob.
       - intel-gpu-firmware
       - kanshi
       - lxqt-policykit
@@ -95,95 +93,23 @@ modules:
       - piper
       - logiops
       - wf-recorder
-      - dkms
-      - kernel-devel
       - gcc
       - git
-  # i915-sriov: SR-IOV-patched i915 (+xe, kvmgt, intel_sriov_compat) kernel
-  # modules. Baked at image build using the Fedora akmods pattern (same as
-  # ublue/bazzite): plain `make` against /usr/src/kernels/<kver>, .ko copied
-  # to /usr/lib/modules/<kver>/weak-updates/ (NOT dkms — on ostree, dkms
-  # installs into updates/ and never runs depmod), stripped the way akmods
-  # strips (207M/177M unstripped i915.ko/xe.ko is 400M of debug info in every
-  # image), then depmod so `modinfo -n i915` resolves to weak-updates.
-  # Ref = tag 2026.09.16 (master). kernel-v7.2 was tried on 2026-10-04 and is
-  # reverted: it builds clean against our 7.2.8-200.fc44 headers (all four .ko,
-  # head 8f9112d "add conftest for drm_client_dev_suspend/resume") but its i915
-  # cannot fetch the GuC microcode on this box — every boot, native AND Xen, both
-  # early (systemd-modules-load) and late (manual modprobe), both PF and non-PF:
-  #   GT0: GuC firmware i915/mtl_guc_70.bin: fetch failed -EACCES
-  #   GT0: GuC initialization failed -ENOEXEC -> Enabling uc failed (-5)
-  #   GT0: Failed to initialize GPU, declaring it wedged!
-  #   IOV: Initialization failed (-EIO) GT wedged -> No VFs could be associated
-  # which wedges the GT (sddm starts, the sway greeter dies at once with "Failed
-  # to create renderer", dom0 has no UI) and kills the SR-IOV goal too. The
-  # 2026.09.16 build on the same kernel/files fetched GuC fine in every boot of
-  # that image the same day. intel_uc_fw.c and intel_uc.c are byte-identical
-  # between those two refs *and* the 2026.09.16 tag, so the cause is somewhere
-  # else in the v7.2 tree (its 7.2 conftest picks are the obvious candidate); the
-  # error is reported through intel_uc_fw_fetch's single fail label, which funnels
-  # the request, the header/version checks and the GEM object creation into the
-  # same "fetch failed" line, so -EACCES is not proven to come from the loader.
-  # The uncompressed-ucode snippet below removes the one other variable.
-  # Both refs report version 2026.09.16-sriov (same PACKAGE_VERSION), so
-  # `modinfo -F version` cannot tell them apart — the discriminator is
-  # srcversion: kernel-v7.2 = A7406AFAA9149A6F52DCCBF (wedged GPU),
-  # 2026.09.16 tag = 909F33CF13511056FB511A7 (working).
-  # weak-updates priority is a *modprobe* rule and holds only POST-PIVOT:
-  # dracut installs the kernel RPM's in-tree i915 into the initrd, which binds
-  # 00:02.0 before switch_root and can then never be replaced (same module
-  # name, already loaded). Blacklists cannot fix that either — they key on the
-  # name, and both copies are i915, so `rd.driver.blacklist=i915` blocked the
-  # patched copy too and (dracut writes it under /run, which survives
-  # switch_root) also killed the real-root autoload: 2026-10-04 dom0 with no
-  # /dev/dri and no UI. The fix is by FILE, not by name:
-  # /etc/dracut.conf.d/60-xen-dom0-igpu.conf omits i915+xe from the initrd, so
-  # real-root coldplug autoloads the patched copy. No blacklist, no forced load.
-  # Re-baked on every image rebuild; that is how this dom0 gets kernel
-  # updates. Needs the dom0 booted with intel_iommu=on iommu=pt
-  # (xen-dom0-refresh) and BIOS VT-d on.
-  # https://github.com/strongtz/i915-sriov-dkms (tag 2026.09.16) — handoff-2026-10-03.md thread 2.
-  # kernel-devel (which pulls kernel-core of the same version) pins the image
-  # to one kernel, so the built modules always match the booted kernel.
-  - type: script
-    snippets:
-      - 'set -euxo pipefail; rm -rf /src/i915-sriov-dkms; git clone --depth 1 --branch 2026.09.16 https://github.com/strongtz/i915-sriov-dkms /src/i915-sriov-dkms'
-      - 'set -euxo pipefail; kver=$(ls /usr/src/kernels/); echo "building i915-sriov against ${kver}"; cd /src/i915-sriov-dkms && make -j"$(nproc)" -C "/usr/src/kernels/${kver}" M="$PWD" modules; DEST="/usr/lib/modules/${kver}/weak-updates"; mkdir -p "$DEST"; install -m 644 compat/intel_sriov_compat.ko drivers/gpu/drm/i915/i915.ko drivers/gpu/drm/i915/kvmgt.ko drivers/gpu/drm/xe/xe.ko "$DEST"/; strip --strip-debug "$DEST"/*.ko; depmod -a "${kver}"; modinfo "/usr/lib/modules/${kver}/weak-updates/i915.ko" | grep -E "^version"; grep -E "^(weak-updates/(i915|xe|kvmgt|intel_sriov_compat))\.ko" "/usr/lib/modules/${kver}/modules.dep"'
-  # NB: do NOT bake uncompressed i915 ucode here — a plain mtl_guc_70.bin /
-  # mtl_huc_gsc.bin was tried on 2026-10-04 and it wedged the GT harder.
-  # Fedora ships these xz-only
-  # (intel-gpu-firmware) and the loader does fall back to `<name>.xz`, but ONLY when
-  # the plain-name attempt returns exactly -ENOENT
-  # (drivers/base/firmware_loader/main.c:880-886). An uncompressed copy that the
-  # kernel cannot read (-EACCES) therefore shadows the .xz that it can, and GuC never
-  # loads: "fetch failed -EACCES" -> -ENOEXEC -> "Failed to initialize GPU, declaring
-  # it wedged" -> "IOV: Initialization failed (-EIO) GT wedged" -> "No VFs could be
-  # associated with this PF".
   # The `files` module is what actually copies files/system/** into the image.
   # It was missing from this recipe, so the whole files/ tree was dead weight:
   # the deployed commit has no /usr/etc/yum.repos.d/{tailscale,twingate}.repo, no
   # usr/lib/tmpfiles.d/xen.conf, no xen-dom0-refresh units and no script — all of
   # those were hand-installed on the dom0 instead, which is why "it's committed
   # in os" kept failing to explain boot behaviour. It must run BEFORE `initramfs`
-  # so dracut sees /etc/dracut.conf.d/60-xen-dom0-igpu.conf when it builds the
-  # image's initrd.
+  # so dracut sees /etc/dracut.conf.d when it builds the image's initrd.
   - type: files
     files:
       - source: system
         destination: /
-  # Initramfs for the deployment. dracut installs the IN-TREE i915 into it
-  # (weak-updates priority is a modprobe rule, not a dracut one), and blacklists
-  # key on the module NAME — both copies are named i915 — so there is no way to
-  # say "not the stock one, the patched one" that way: `rd.driver.blacklist=i915`
-  # blocked the patched copy too (and leaked into the real root, since dracut
-  # writes it to /run/modprobe.d/ and /run survives switch_root — 2026-10-04
-  # dead UI). Filter by FILE instead: omit_drivers in
-  # /etc/dracut.conf.d/60-xen-dom0-igpu.conf drops i915+xe out of the initrd
-  # (verified here: scratch `dracut --force` with that conf -> no i915/xe .ko,
-  # no weak-updates deps, 836 other modules plus cryptsetup/xfs/nvme/xen
-  # backends intact, 238M -> 217M), so nothing binds 00:02.0 pre-pivot and
-  # real-root coldplug autoloads the patched weak-updates copy. No blacklist,
-  # no forced load, no name collision.
+  # The stock in-tree i915 is in the initrd by dracut default and binds 00:02.0
+  # pre-pivot — that is the driver we want (2026-10-05: the strongtz i915-sriov
+  # weak-updates experiment is abandoned; it wedged the GT on every coldplug
+  # boot, and the in-tree driver has no ARL SR-IOV anyway).
   - type: initramfs
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
 
