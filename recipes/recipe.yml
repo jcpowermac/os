@@ -32,6 +32,13 @@ modules:
       - gvfs-smb
       - grim
       - imv
+      # Sole supplier of /usr/lib/firmware/i915/mtl_guc_70.bin.xz + mtl_huc_gsc.bin.xz
+      # (upstream ships these compressed-only; rpm -q --whatrequires intel-gpu-firmware
+      # is empty and kernel-core's firmware dep is a Recommends). Listed explicitly
+      # because a base-image or weak-deps change silently deletes the GuC blob, and
+      # that reads as "i915 needs an uncompressed blob" — the 2026-10-04 db87ddf
+      # misdiagnosis. See the note below the i915-sriov module.
+      - intel-gpu-firmware
       - kanshi
       - lxqt-policykit
       - mesa-dri-drivers
