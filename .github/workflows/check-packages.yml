@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:44
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           set -u
           missing=0
