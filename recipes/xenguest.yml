@@ -1,8 +1,8 @@
 ---
 # name determines the ghcr package: ghcr.io/jcpowermac/os-xenguest
-# Headless Xen guest VM image with minimal kernel for waypipe-projected UI VMs.
-# Uses the minimal Xen guest kernel from xen-vsock-kernel releases (stripped
-# of ~70% of modules vs stock Fedora kernel).
+# Headless Xen PV guest VM image with minimal kernel for waypipe-projected UI VMs.
+# Uses the minimal Xen PV kernel from xen-vsock-kernel releases (stripped
+# of ~70% of modules vs stock Fedora kernel; no QEMU, no virtio, no vsock).
 # Base: official minimal bootc image — kernel + openssh-server + ostree already in.
 # waypipe 0.11's `server` mode is itself a fake Wayland compositor, so no sway
 # or other desktop compositor is needed in the guest.
