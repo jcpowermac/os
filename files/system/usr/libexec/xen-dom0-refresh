@@ -166,12 +166,12 @@ kargs=$(tr ' ' '\n' < /proc/cmdline |
 [ -n "$ostree_arg" ] || { log "no valid ostree= arg; keeping existing user.cfg"; exit 0; }
 
 # --- 3c. dom0 params from qlvm ----------------------------------------------
-# qlvm install writes /etc/qvm/xen-boot-params.conf with dom0_mem,
+# qlvm install writes /etc/qlvm/xen-boot-params.conf with dom0_mem,
 # dom0_max_vcpus, and dom0_vcpus_pin (if enabled). Append these to the
 # multiboot2 line so dom0 resources are constrained on boot.
 dom0_params=""
-if [ -f /etc/qvm/xen-boot-params.conf ]; then
-  dom0_params=$(cat /etc/qvm/xen-boot-params.conf | tr -d '\n')
+if [ -f /etc/qlvm/xen-boot-params.conf ]; then
+  dom0_params=$(cat /etc/qlvm/xen-boot-params.conf | tr -d '\n')
   log "read dom0 params: ${dom0_params}"
 fi
 

@@ -1,7 +1,7 @@
 ---
 # name determines the ghcr package: ghcr.io/jcpowermac/os-xenguest
 # Headless Xen PV guest VM image with minimal kernel for waypipe-projected UI VMs.
-# Uses the minimal Xen PV kernel from xen-vsock-kernel releases (stripped
+# Uses the minimal Xen PV kernel from xen-guest-kernel releases (stripped
 # of ~70% of modules vs stock Fedora kernel; no QEMU, no virtio, no vsock).
 # Base: official minimal bootc image — kernel + openssh-server + ostree already in.
 # waypipe 0.11's `server` mode is itself a fake Wayland compositor, so no sway
@@ -11,21 +11,21 @@ description: Headless Xen guest VM with minimal kernel for waypipe-projected UI 
 base-image: quay.io/fedora/fedora-bootc
 image-version: 44
 modules:
-  # Install the minimal Xen guest kernel RPMs from the xen-vsock-kernel release.
+  # Install the minimal Xen guest kernel RPMs from the xen-guest-kernel release.
   # Update the version below when a new minimal kernel is built.
   # The dnf module must run before rpm-ostree so the kernel is available.
   - type: dnf
     install:
       packages:
         # TODO: update version after first minimal kernel build
-        - https://github.com/jcpowermac/xen-vsock-kernel/releases/download/kernel-xenguest-PLACEHOLDER/kernel-PLACEHOLDER.x86_64.rpm
-        - https://github.com/jcpowermac/xen-vsock-kernel/releases/download/kernel-xenguest-PLACEHOLDER/kernel-core-PLACEHOLDER.x86_64.rpm
-        - https://github.com/jcpowermac/xen-vsock-kernel/releases/download/kernel-xenguest-PLACEHOLDER/kernel-modules-PLACEHOLDER.x86_64.rpm
-        - https://github.com/jcpowermac/xen-vsock-kernel/releases/download/kernel-xenguest-PLACEHOLDER/kernel-modules-core-PLACEHOLDER.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-7.2.9-201.fc44.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-core-7.2.9-201.fc44.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-modules-7.2.9-201.fc44.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-modules-core-7.2.9-201.fc44.x86_64.rpm
   - type: rpm-ostree
     install:
       - waypipe   # `waypipe server` = per-app fake Wayland compositor (guest side)
       - firefox   # first projected app; add more here as needed
       - systemd-networkd  # declarative link config (baked .network file); NM masked in the guest
-      - nmap-ncat         # qvm-ctl relay bridges the guest waypipe unix socket to the dom0 TCP data port
+      - nmap-ncat         # qlvm-ctl relay bridges the guest waypipe unix socket to the dom0 TCP data port
       - xwayland-satellite # firefox is an X client: waypipe --xwls needs this in PATH to bind an X display socket
