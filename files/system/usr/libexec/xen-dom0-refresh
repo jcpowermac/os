@@ -160,7 +160,7 @@ fi
 # hardlink with a plain file.
 
 kargs=$(tr ' ' '\n' < /proc/cmdline |
-  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*|intel_iommu=.*|iommu=.*|i915\..*|xe\..*|module_blacklist=.*|rd\.driver\.blacklist=.*)$' |
+  grep -vE '^(BOOT_IMAGE=.*|BOOT_DEV=.*|BOOT_HARDWARE=.*|BOOT_MODE=.*|srmod=.*|rhgb|quiet|console=.*|rd.shell|ro|rw|ostree=.*|intel_iommu=.*|iommu=.*)$' |
   paste -sd' ')
 
 [ -n "$ostree_arg" ] || { log "no valid ostree= arg; keeping existing user.cfg"; exit 0; }
