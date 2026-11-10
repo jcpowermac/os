@@ -8,7 +8,7 @@
 name: os-bolt
 description: Headless minimal variant for disposable waypipe-projected UI VMs.
 base-image: quay.io/fedora/fedora-bootc
-image-version: 44
+image-version: 45
 modules:
   - type: rpm-ostree
     install:
