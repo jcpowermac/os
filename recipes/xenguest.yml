@@ -9,7 +9,7 @@
 name: os-xenguest
 description: Headless Xen guest VM with minimal kernel for waypipe-projected UI VMs.
 base-image: quay.io/fedora/fedora-bootc
-image-version: 44
+image-version: 45
 modules:
   # Install the minimal Xen guest kernel RPMs from the xen-guest-kernel release.
   # Update the version below when a new minimal kernel is built.
@@ -17,11 +17,11 @@ modules:
   - type: dnf
     install:
       packages:
-        # TODO: update version after first minimal kernel build
-        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-7.2.9-201.fc44.x86_64.rpm
-        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-core-7.2.9-201.fc44.x86_64.rpm
-        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-modules-7.2.9-201.fc44.x86_64.rpm
-        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.2.9-201.fc44/kernel-modules-core-7.2.9-201.fc44.x86_64.rpm
+        # kernel-xenguest-7.3.3-301.fc45 (2026-11-10, F45)
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.3.3-301.fc45/kernel-7.3.3-301.fc45.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.3.3-301.fc45/kernel-core-7.3.3-301.fc45.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.3.3-301.fc45/kernel-modules-7.3.3-301.fc45.x86_64.rpm
+        - https://github.com/jcpowermac/xen-guest-kernel/releases/download/kernel-xenguest-7.3.3-301.fc45/kernel-modules-core-7.3.3-301.fc45.x86_64.rpm
   - type: rpm-ostree
     install:
       - waypipe   # `waypipe server` = per-app fake Wayland compositor (guest side)
